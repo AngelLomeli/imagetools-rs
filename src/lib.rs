@@ -1,9 +1,7 @@
-use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use std::process;
 use std::str;
 
 use std::error;
@@ -30,46 +28,11 @@ impl error::Error for InvalidPNGFormat {
     }
 }
 
-fn usage(name: &str) {
-    println!(
-        "usage: {} in_file out_file\n\
-         \tin_file\tThe name of the input file\n\
-         \tout_file\tThe name of the output file.\n",
-        name
-    )
-}
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
-        usage(&args[0]);
-        process::exit(1);
-    }
-
-    let in_file = &args[1];
-    let out_file = &args[2];
-
-    let png_file = PNGFile::from_file(in_file).unwrap_or_else(|err| {
-        eprintln!("Could not load {}: {}", in_file, err);
-        process::exit(2);
-    });
-
-    // Debug - testing Display
-    for chunk in &png_file.chunks {
-        println!("{}\n", chunk);
-    }
-
-    png_file.write(out_file).unwrap_or_else(|err| {
-        eprintln!("Could not write {}: {}", out_file, err);
-        process::exit(3);
-    });
-}
-
-struct PNGFile {
+pub struct PNGFile {
     chunks: Vec<PNGChunk>,
 }
 
-struct PNGChunk {
+pub struct PNGChunk {
     length: u32,
     chunk_type: [u8; 4],
     data: Vec<u8>,
@@ -77,7 +40,7 @@ struct PNGChunk {
 }
 
 impl PNGFile {
-    fn from_file(filename: &str) -> Result<PNGFile, Box<dyn Error>> {
+    pub fn from_file(filename: &str) -> Result<PNGFile, Box<dyn Error>> {
         let mut header: [u8; 8] = [0; 8];
         let mut png_file = File::open(filename)?;
 
@@ -91,7 +54,11 @@ impl PNGFile {
         Ok(PNGFile { chunks })
     }
 
-    fn write(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+    pub fn get_chunks(&self) -> &Vec<PNGChunk> {
+        &self.chunks
+    }
+
+    pub fn write(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         let mut buffer = File::create(filename).unwrap();
         buffer.write(&PNG_HEADER).expect("Couldn't write to file");
 
