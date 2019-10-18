@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
@@ -29,6 +30,7 @@ impl error::Error for InvalidPNGFormat {
 }
 
 pub struct PNGFile {
+    ihdr_chunk: PNGChunk,
     chunks: Vec<PNGChunk>,
 }
 
@@ -37,6 +39,16 @@ pub struct PNGChunk {
     chunk_type: [u8; 4],
     data: Vec<u8>,
     crc: [u8; 4],
+}
+
+pub struct IHDRData {
+    width: u32,
+    height: u32,
+    bit_depth: u8,
+    color_type: u8,
+    compression_method: u8,
+    filter_method: u8,
+    interlace_method: u8,
 }
 
 impl PNGFile {
@@ -50,8 +62,12 @@ impl PNGFile {
             return Err(InvalidPNGFormat.into());
         }
 
-        let chunks = get_chunks_from_file(&mut png_file);
-        Ok(PNGFile { chunks })
+        let (ihdr_chunk, chunks) = get_chunks_from_file(&mut png_file);
+        Ok(PNGFile { ihdr_chunk, chunks })
+    }
+
+    pub fn get_ihdr_chunk(&self) -> &PNGChunk {
+        &self.ihdr_chunk
     }
 
     pub fn get_chunks(&self) -> &Vec<PNGChunk> {
@@ -93,9 +109,114 @@ impl fmt::Display for PNGChunk {
     }
 }
 
-fn get_chunks_from_file(file: &mut File) -> Vec<PNGChunk> {
+impl IHDRData {
+    pub fn from_chunk(chunk: &PNGChunk) -> IHDRData {
+        if str::from_utf8(&chunk.chunk_type).unwrap() != "IHDR" {
+            // TODO Change this to return a Result
+            panic!("Not an IHDR chunk!");
+        }
+
+        let width: u32 = u32::from_be_bytes(chunk.data[0..4].try_into().unwrap());
+        let height: u32 = u32::from_be_bytes(chunk.data[4..8].try_into().unwrap());
+        let bit_depth = chunk.data[8];
+        let color_type = chunk.data[9];
+        let compression_method = chunk.data[10];
+        let filter_method = chunk.data[11];
+        let interlace_method = chunk.data[12];
+
+        if width == 0 || height == 0 {
+            // TODO Create error type for invalid IHDR data and return
+            panic!("Width and height must be non-zero numbers.");
+        }
+
+        // TODO There's probably a cleaner way to do this. Find one or remove this comment.
+        if bit_depth != 1 && bit_depth != 2 && bit_depth != 4 && bit_depth != 8 && bit_depth != 16 {
+            // TODO Create error type for invalid IHDR data and return
+            panic!("Invalid bit depth specified. Valid values are 1, 2, 4, 8, and 16.");
+        }
+
+        // TODO There's probably a cleaner way to do this. Find one or remove this comment.
+        if color_type != 0
+            && color_type != 2
+            && color_type != 3
+            && color_type != 4
+            && color_type != 6
+        {
+            // TODO Create error type for invalid IHDR data and return
+            panic!("Invalid color type specified. Valid values are 0, 2, 3, 4, and 6.");
+        }
+
+        if (color_type == 2 || color_type == 4 || color_type == 6)
+            && (bit_depth != 8 && bit_depth != 16)
+        {
+            // TODO Create error type for invalid IHDR data and return
+            panic!("Invalid bit depth specified for color type. Valid values are 8 and 16.");
+        } else if color_type == 3 && bit_depth == 16 {
+            // TODO Create error type for invalid IHDR data and return
+            panic!("Invalid bit depth specified for color type. Valid values are 1, 2, 4, and 8.");
+        }
+        // Color type 0 allows all valid bit depths, so no check needed.
+
+        if compression_method != 0 {
+            // TODO While not defined in the ISO spec, this may still be valid. Needs more
+            // research, but for now we'll reject it. Needs an IHDR error type if we don't allow
+            // it.
+            panic!("Unsupported compression method specified. The only valid value is 0.");
+        }
+
+        if filter_method != 0 {
+            // TODO While not defined in the ISO spec, this may still be valid. Needs more
+            // research, but for now we'll reject it. Needs an IHDR error type if we don't allow
+            // it.
+            panic!("Unsupported filter method specified. The only valid value is 0.");
+        }
+
+        if interlace_method > 1 {
+            // TODO While not defined in the ISO spec, this may still be valid. Needs more
+            // research, but for now we'll reject it. Needs an IHDR error type if we don't allow
+            // it.
+            panic!("Unsupported interlace method specified. Valid values are 0 and 1.");
+        }
+
+        // All validation passed.
+        IHDRData {
+            width,
+            height,
+            bit_depth,
+            color_type,
+            compression_method,
+            filter_method,
+            interlace_method,
+        }
+    }
+}
+
+impl fmt::Display for IHDRData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Width (pixels): {}\n\
+             Height (pixels): {}\n\
+             Bit depth: {}\n\
+             Color Type: {}\n\
+             Compression Method: {}\n\
+             Filter Method: {}\n\
+             Interlace Method: {}",
+            self.width,
+            self.height,
+            self.bit_depth,
+            self.color_type,
+            self.compression_method,
+            self.filter_method,
+            self.interlace_method
+        )
+    }
+}
+
+fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Vec<PNGChunk>) {
     // This assumes the file is open and the PNG header has already been consumed from the file
     let mut chunks: Vec<PNGChunk> = Vec::new();
+    let mut ihdr_chunk: Option<PNGChunk> = None;
     let mut found_iend = false;
 
     while !found_iend {
@@ -112,6 +233,16 @@ fn get_chunks_from_file(file: &mut File) -> Vec<PNGChunk> {
         let mut crc: [u8; 4] = [0; 4];
         file.read(&mut crc).unwrap();
 
+        if str::from_utf8(&chunk_type).unwrap() == "IHDR" {
+            ihdr_chunk = Some(PNGChunk {
+                length,
+                chunk_type,
+                data,
+                crc,
+            });
+            continue;
+        }
+
         if str::from_utf8(&chunk_type).unwrap() == "IEND" {
             found_iend = true;
         }
@@ -124,5 +255,10 @@ fn get_chunks_from_file(file: &mut File) -> Vec<PNGChunk> {
         });
     }
 
-    chunks
+    if let Some(ihdr) = ihdr_chunk {
+        (ihdr, chunks)
+    } else {
+        // TODO Use a Result as the return type or find a more elegant solution.
+        panic!("No IHDR Chunk found!");
+    }
 }

@@ -1,6 +1,7 @@
 use std::env;
 use std::process;
 
+use imagetools::IHDRData;
 use imagetools::PNGFile;
 
 fn main() {
@@ -19,8 +20,12 @@ fn main() {
     });
 
     // Debug - testing Display
+    let ihdr_data = IHDRData::from_chunk(png_file.get_ihdr_chunk());
+    println!("IHDR:\n{}\n", ihdr_data);
+
+    // Debug - testing Display
     for chunk in png_file.get_chunks() {
-        println!("{}\n", chunk);
+        println!("Other Chunks:\n{}\n", chunk);
     }
 
     png_file.write(out_file).unwrap_or_else(|err| {
