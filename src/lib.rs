@@ -62,8 +62,58 @@ impl PNGFile {
             return Err(InvalidPNGFormat.into());
         }
 
-        let (ihdr_chunk, chunks) = get_chunks_from_file(&mut png_file);
+        let (ihdr_chunk, chunks) = PNGFile::get_chunks_from_file(&mut png_file);
         Ok(PNGFile { ihdr_chunk, chunks })
+    }
+
+    fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Vec<PNGChunk>) {
+        // This assumes the file is open and the PNG header has already been consumed from the file
+        let mut chunks: Vec<PNGChunk> = Vec::new();
+        let mut ihdr_chunk: Option<PNGChunk> = None;
+        let mut found_iend = false;
+
+        while !found_iend {
+            let mut length: [u8; 4] = [0; 4];
+            file.read(&mut length).unwrap();
+            let length: u32 = u32::from_be_bytes(length);
+
+            let mut chunk_type: [u8; 4] = [0; 4];
+            file.read(&mut chunk_type).unwrap();
+
+            let mut data: Vec<u8> = vec![0u8; length as usize];
+            file.read(data.as_mut_slice()).unwrap();
+
+            let mut crc: [u8; 4] = [0; 4];
+            file.read(&mut crc).unwrap();
+
+            if str::from_utf8(&chunk_type).unwrap() == "IHDR" {
+                ihdr_chunk = Some(PNGChunk {
+                    length,
+                    chunk_type,
+                    data,
+                    crc,
+                });
+                continue;
+            }
+
+            if str::from_utf8(&chunk_type).unwrap() == "IEND" {
+                found_iend = true;
+            }
+
+            chunks.push(PNGChunk {
+                length,
+                chunk_type,
+                data,
+                crc,
+            });
+        }
+
+        if let Some(ihdr) = ihdr_chunk {
+            (ihdr, chunks)
+        } else {
+            // TODO Use a Result as the return type or find a more elegant solution.
+            panic!("No IHDR Chunk found!");
+        }
     }
 
     pub fn get_ihdr_chunk(&self) -> &PNGChunk {
@@ -210,55 +260,5 @@ impl fmt::Display for IHDRData {
             self.filter_method,
             self.interlace_method
         )
-    }
-}
-
-fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Vec<PNGChunk>) {
-    // This assumes the file is open and the PNG header has already been consumed from the file
-    let mut chunks: Vec<PNGChunk> = Vec::new();
-    let mut ihdr_chunk: Option<PNGChunk> = None;
-    let mut found_iend = false;
-
-    while !found_iend {
-        let mut length: [u8; 4] = [0; 4];
-        file.read(&mut length).unwrap();
-        let length: u32 = u32::from_be_bytes(length);
-
-        let mut chunk_type: [u8; 4] = [0; 4];
-        file.read(&mut chunk_type).unwrap();
-
-        let mut data: Vec<u8> = vec![0u8; length as usize];
-        file.read(data.as_mut_slice()).unwrap();
-
-        let mut crc: [u8; 4] = [0; 4];
-        file.read(&mut crc).unwrap();
-
-        if str::from_utf8(&chunk_type).unwrap() == "IHDR" {
-            ihdr_chunk = Some(PNGChunk {
-                length,
-                chunk_type,
-                data,
-                crc,
-            });
-            continue;
-        }
-
-        if str::from_utf8(&chunk_type).unwrap() == "IEND" {
-            found_iend = true;
-        }
-
-        chunks.push(PNGChunk {
-            length,
-            chunk_type,
-            data,
-            crc,
-        });
-    }
-
-    if let Some(ihdr) = ihdr_chunk {
-        (ihdr, chunks)
-    } else {
-        // TODO Use a Result as the return type or find a more elegant solution.
-        panic!("No IHDR Chunk found!");
     }
 }
