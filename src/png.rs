@@ -126,14 +126,24 @@ impl PNGFile {
 
     pub fn write(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         let mut buffer = File::create(filename).unwrap();
-        buffer.write(&PNG_HEADER).expect("Couldn't write to file");
+        buffer.write(&PNG_HEADER)?;
+
+        &self.ihdr_chunk.write_to_file(&mut buffer)?;
 
         for chunk in &self.chunks {
-            buffer.write(&chunk.length.to_be_bytes())?;
-            buffer.write(&chunk.chunk_type)?;
-            buffer.write(&chunk.data)?;
-            buffer.write(&chunk.crc)?;
+            &chunk.write_to_file(&mut buffer)?;
         }
+
+        Ok(())
+    }
+}
+
+impl PNGChunk {
+    fn write_to_file(&self, open_file: &mut File) -> Result<(), Box<dyn Error>> {
+        open_file.write(&self.length.to_be_bytes())?;
+        open_file.write(&self.chunk_type)?;
+        open_file.write(&self.data)?;
+        open_file.write(&self.crc)?;
 
         Ok(())
     }
