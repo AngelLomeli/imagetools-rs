@@ -1,8 +1,8 @@
 use std::env;
 use std::process;
 
-use imagetools::IHDRData;
-use imagetools::PNGFile;
+use imagetools::png::IHDRData;
+use imagetools::png::PNGFile;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
