@@ -31,6 +31,7 @@ impl error::Error for InvalidPNGFormat {
 
 pub struct PNGFile {
     ihdr_chunk: PNGChunk,
+    time_chunk: Option<PNGChunk>,
     chunks: Vec<PNGChunk>,
 }
 
@@ -41,6 +42,7 @@ pub struct PNGChunk {
     crc: [u8; 4],
 }
 
+// IHDR chunk
 pub struct IHDRData {
     width: u32,
     height: u32,
@@ -49,6 +51,16 @@ pub struct IHDRData {
     compression_method: u8,
     filter_method: u8,
     interlace_method: u8,
+}
+
+// tIME chunk
+pub struct TimeData {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
 }
 
 impl PNGFile {
@@ -62,14 +74,22 @@ impl PNGFile {
             return Err(InvalidPNGFormat.into());
         }
 
-        let (ihdr_chunk, chunks) = PNGFile::get_chunks_from_file(&mut png_file);
-        Ok(PNGFile { ihdr_chunk, chunks })
+        let (ihdr_chunk, time_chunk, chunks) = PNGFile::get_chunks_from_file(&mut png_file);
+        Ok(PNGFile {
+            ihdr_chunk,
+            time_chunk,
+            chunks,
+        })
     }
 
-    fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Vec<PNGChunk>) {
+    // TODO Change this to just return the whole file. There's no real value in having it split,
+    // and any additions to the PNGFile struct will require another entry here. This would also
+    // make the signature less messy so it's easier to return a Result instead of using panic.
+    fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Option<PNGChunk>, Vec<PNGChunk>) {
         // This assumes the file is open and the PNG header has already been consumed from the file
         let mut chunks: Vec<PNGChunk> = Vec::new();
         let mut ihdr_chunk: Option<PNGChunk> = None;
+        let mut time_chunk: Option<PNGChunk> = None;
         let mut found_iend = false;
 
         while !found_iend {
@@ -86,30 +106,31 @@ impl PNGFile {
             let mut crc: [u8; 4] = [0; 4];
             file.read(&mut crc).unwrap();
 
-            if str::from_utf8(&chunk_type).unwrap() == "IHDR" {
-                ihdr_chunk = Some(PNGChunk {
-                    length,
-                    chunk_type,
-                    data,
-                    crc,
-                });
-                continue;
-            }
-
-            if str::from_utf8(&chunk_type).unwrap() == "IEND" {
-                found_iend = true;
-            }
-
-            chunks.push(PNGChunk {
+            let chunk = PNGChunk {
                 length,
                 chunk_type,
                 data,
                 crc,
-            });
+            };
+            let chunk_type_str = str::from_utf8(&chunk_type).unwrap();
+
+            if chunk_type_str == "IHDR" {
+                ihdr_chunk = Some(chunk);
+                continue;
+            } else if chunk_type_str == "tIME" {
+                time_chunk = Some(chunk);
+                continue;
+            }
+
+            if chunk_type_str == "IEND" {
+                found_iend = true;
+            }
+
+            chunks.push(chunk);
         }
 
         if let Some(ihdr) = ihdr_chunk {
-            (ihdr, chunks)
+            (ihdr, time_chunk, chunks)
         } else {
             // TODO Use a Result as the return type or find a more elegant solution.
             panic!("No IHDR Chunk found!");
@@ -117,7 +138,35 @@ impl PNGFile {
     }
 
     pub fn get_ihdr_chunk(&self) -> &PNGChunk {
+        // TODO - A caller would be more likely to care about the IHDR data, not the chunk. Change
+        // this to return an IHDRData chunk. For now this won't be a struct that affects the file
+        // itself, but that's probably a good future step.
         &self.ihdr_chunk
+    }
+
+    pub fn get_last_modified(&self) -> TimeData {
+        // TODO Add a set_last_modified - unlike other chunks, the existing data for last time
+        // modified should be entirely replaced with a new TimeData, not edited.
+        // TODO Change this to return a Result or Option - since the tIME chunk is ancillary, a
+        // valid PNG file doesn't actually need one.
+        if let Some(chunk) = &self.time_chunk {
+            let year = u16::from_be_bytes(chunk.data[0..2].try_into().unwrap());
+            let month = chunk.data[2];
+            let day = chunk.data[3];
+            let hour = chunk.data[4];
+            let minute = chunk.data[5];
+            let second = chunk.data[6];
+            TimeData {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            }
+        } else {
+            panic!("No time chunk!");
+        }
     }
 
     pub fn get_chunks(&self) -> &Vec<PNGChunk> {
@@ -129,6 +178,12 @@ impl PNGFile {
         buffer.write(&PNG_HEADER)?;
 
         &self.ihdr_chunk.write_to_file(&mut buffer)?;
+        // TODO Update to use a current timestamp since the file is being written out.
+        // The spec allows the time chunk to come in this order, but it may be valuable in the
+        // future to preserve the original ordering if there is one.
+        if let Some(time_chunk) = &self.time_chunk {
+            time_chunk.write_to_file(&mut buffer)?;
+        }
 
         for chunk in &self.chunks {
             &chunk.write_to_file(&mut buffer)?;
@@ -269,6 +324,16 @@ impl fmt::Display for IHDRData {
             self.compression_method,
             self.filter_method,
             self.interlace_method
+        )
+    }
+}
+
+impl fmt::Display for TimeData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}-{}-{} {}:{}:{}",
+            self.year, self.month, self.day, self.hour, self.minute, self.second
         )
     }
 }

@@ -28,6 +28,8 @@ fn main() {
         println!("Other Chunks:\n{}\n", chunk);
     }
 
+    println!("Last modified: {}", png_file.get_last_modified());
+
     png_file.write(out_file).unwrap_or_else(|err| {
         eprintln!("Could not write {}: {}", out_file, err);
         process::exit(3);
