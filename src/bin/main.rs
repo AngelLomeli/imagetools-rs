@@ -28,7 +28,9 @@ fn main() {
         println!("Other Chunks:\n{}\n", chunk);
     }
 
-    println!("Last modified: {}", png_file.get_last_modified());
+    if let Some(last_modified) = png_file.get_last_modified() {
+        println!("Last modified: {}", last_modified);
+    }
 
     png_file.write(out_file).unwrap_or_else(|err| {
         eprintln!("Could not write {}: {}", out_file, err);

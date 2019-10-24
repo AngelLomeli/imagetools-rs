@@ -144,11 +144,9 @@ impl PNGFile {
         &self.ihdr_chunk
     }
 
-    pub fn get_last_modified(&self) -> TimeData {
+    pub fn get_last_modified(&self) -> Option<TimeData> {
         // TODO Add a set_last_modified - unlike other chunks, the existing data for last time
         // modified should be entirely replaced with a new TimeData, not edited.
-        // TODO Change this to return a Result or Option - since the tIME chunk is ancillary, a
-        // valid PNG file doesn't actually need one.
         if let Some(chunk) = &self.time_chunk {
             let year = u16::from_be_bytes(chunk.data[0..2].try_into().unwrap());
             let month = chunk.data[2];
@@ -156,17 +154,17 @@ impl PNGFile {
             let hour = chunk.data[4];
             let minute = chunk.data[5];
             let second = chunk.data[6];
-            TimeData {
+
+            return Some(TimeData {
                 year,
                 month,
                 day,
                 hour,
                 minute,
                 second,
-            }
-        } else {
-            panic!("No time chunk!");
+            });
         }
+        None
     }
 
     pub fn get_chunks(&self) -> &Vec<PNGChunk> {
