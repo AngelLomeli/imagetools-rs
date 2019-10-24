@@ -64,32 +64,20 @@ pub struct TimeData {
 }
 
 impl PNGFile {
+
     pub fn from_file(filename: &str) -> Result<PNGFile, Box<dyn Error>> {
         let mut header: [u8; 8] = [0; 8];
-        let mut png_file = File::open(filename)?;
+        let mut file = File::open(filename)?;
+        file.read(&mut header)?;
 
-        png_file.read(&mut header)?;
-
+        // All PNG files must have the same header by definition.
         if !header.iter().zip(PNG_HEADER.iter()).all(|(a, b)| a == b) {
             return Err(InvalidPNGFormat.into());
         }
 
-        let (ihdr_chunk, time_chunk, chunks) = PNGFile::get_chunks_from_file(&mut png_file);
-        Ok(PNGFile {
-            ihdr_chunk,
-            time_chunk,
-            chunks,
-        })
-    }
-
-    // TODO Change this to just return the whole file. There's no real value in having it split,
-    // and any additions to the PNGFile struct will require another entry here. This would also
-    // make the signature less messy so it's easier to return a Result instead of using panic.
-    fn get_chunks_from_file(file: &mut File) -> (PNGChunk, Option<PNGChunk>, Vec<PNGChunk>) {
-        // This assumes the file is open and the PNG header has already been consumed from the file
-        let mut chunks: Vec<PNGChunk> = Vec::new();
         let mut ihdr_chunk: Option<PNGChunk> = None;
         let mut time_chunk: Option<PNGChunk> = None;
+        let mut chunks: Vec<PNGChunk> = Vec::new();
         let mut found_iend = false;
 
         while !found_iend {
@@ -130,11 +118,9 @@ impl PNGFile {
         }
 
         if let Some(ihdr) = ihdr_chunk {
-            (ihdr, time_chunk, chunks)
-        } else {
-            // TODO Use a Result as the return type or find a more elegant solution.
-            panic!("No IHDR Chunk found!");
+            return Ok( PNGFile{ ihdr_chunk: ihdr, time_chunk, chunks } );
         }
+        Err(InvalidPNGFormat.into())
     }
 
     pub fn get_ihdr_chunk(&self) -> &PNGChunk {
